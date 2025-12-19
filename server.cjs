@@ -56,6 +56,59 @@ try {
   // Continue anyway - might fail on Render but that's okay
 }
 
+// Helper function to serve a file
+function serveFile(resolvedPath, stats, req, res) {
+  // Get MIME type
+  const ext = path.extname(resolvedPath).toLowerCase();
+  const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
+
+  // Set headers
+  res.setHeader('Content-Type', mimeType);
+  res.setHeader('Content-Length', stats.size);
+  res.setHeader('Accept-Ranges', 'bytes');
+
+  // Support range requests for large files (resume downloads)
+  const range = req.headers.range;
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : stats.size - 1;
+    const chunkSize = end - start + 1;
+
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${stats.size}`,
+      'Content-Length': chunkSize,
+      'Content-Type': mimeType,
+    });
+
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+
+    const stream = fs.createReadStream(resolvedPath, { start, end });
+    stream.pipe(res);
+    console.log(`  → 206 Partial Content: ${start}-${end}/${stats.size}`);
+  } else {
+    res.writeHead(200);
+
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+
+    const stream = fs.createReadStream(resolvedPath);
+    stream.pipe(res);
+    console.log(`  → 200 OK: ${path.basename(resolvedPath)} (${stats.size} bytes)`);
+  }
+}
+
+// Helper function to send 404 response
+function send404(res, filePath) {
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end(`File Not Found: ${path.basename(filePath)}\n\nPlease ensure the file is uploaded to the releases directory on the server.`);
+}
+
 // Create HTTP server
 const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
@@ -183,58 +236,58 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Check if file exists
+  // Check if file exists - try both the resolved path and also check if we need to handle URL encoding differently
   fs.stat(resolvedPath, (err, stats) => {
     if (err || !stats.isFile()) {
+      // If file not found, try to list available files for debugging
       console.log(`  → 404 Not Found: ${resolvedPath}`);
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('File Not Found');
+      console.log(`  → Requested pathname: ${pathname}`);
+      console.log(`  → Decoded pathname: ${decodeURIComponent(pathname)}`);
+      
+      // List available files in releases directory for debugging
+      try {
+        if (fs.existsSync(CONFIG.releasesDir)) {
+          const availableFiles = fs.readdirSync(CONFIG.releasesDir);
+          console.log(`  → Available files in releases directory: ${availableFiles.join(', ')}`);
+          
+          // Try to find a matching file (case-insensitive, handle spaces)
+          const requestedFileName = path.basename(resolvedPath);
+          const matchingFile = availableFiles.find(f => 
+            f.toLowerCase() === requestedFileName.toLowerCase() ||
+            decodeURIComponent(f) === requestedFileName ||
+            f === requestedFileName
+          );
+          
+          if (matchingFile) {
+            console.log(`  → Found potential match: ${matchingFile}, trying that instead...`);
+            const correctedPath = path.join(CONFIG.releasesDir, matchingFile);
+            const correctedResolved = path.resolve(correctedPath);
+            
+            // Security check again
+            if (correctedResolved.startsWith(path.resolve(CONFIG.releasesDir))) {
+              fs.stat(correctedResolved, (err2, stats2) => {
+                if (!err2 && stats2.isFile()) {
+                  // Found the file! Serve it
+                  serveFile(correctedResolved, stats2, req, res);
+                  return;
+                } else {
+                  send404(res, resolvedPath);
+                }
+              });
+              return;
+            }
+          }
+        }
+      } catch (listErr) {
+        console.error(`  → Error listing files: ${listErr.message}`);
+      }
+      
+      send404(res, resolvedPath);
       return;
     }
-
-    // Get MIME type
-    const ext = path.extname(resolvedPath).toLowerCase();
-    const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
-
-    // Set headers
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Length', stats.size);
-    res.setHeader('Accept-Ranges', 'bytes');
-
-    // Support range requests for large files (resume downloads)
-    const range = req.headers.range;
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stats.size - 1;
-      const chunkSize = end - start + 1;
-
-      res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${stats.size}`,
-        'Content-Length': chunkSize,
-        'Content-Type': mimeType,
-      });
-
-      if (req.method === 'HEAD') {
-        res.end();
-        return;
-      }
-
-      const stream = fs.createReadStream(resolvedPath, { start, end });
-      stream.pipe(res);
-      console.log(`  → 206 Partial Content: ${start}-${end}/${stats.size}`);
-    } else {
-      res.writeHead(200);
-
-      if (req.method === 'HEAD') {
-        res.end();
-        return;
-      }
-
-      const stream = fs.createReadStream(resolvedPath);
-      stream.pipe(res);
-      console.log(`  → 200 OK: ${stats.size} bytes`);
-    }
+    
+    // File exists, serve it
+    serveFile(resolvedPath, stats, req, res);
   });
 });
 
