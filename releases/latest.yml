@@ -1,6 +1,6 @@
 version: 1.0.5
 files:
-  - url: My Projects Pro Setup 1.0.5.exe
+  - url: https://github.com/rafikhanmanyar-star/MyProjectsPro/releases/download/v1.0.5/My.Projects.Pro.Setup.1.0.5.exe
     sha512: izyBbnSIPylcveT9jqp0TO6GowecR754xcenAvMmhejDPGxxNF24Nu3ooP1ziWV0LfdoFUwpustn1EV9/avQ2Q==
     size: 107965376
 path: My Projects Pro Setup 1.0.5.exe
