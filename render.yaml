@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: my-projects-pro-update-server
+    env: node
+    plan: free
+    buildCommand: ""
+    startCommand: node server.cjs
+    rootDir: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+

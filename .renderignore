@@ -1,0 +1,24 @@
+# Git files
+.git/
+.gitignore
+
+# Documentation (but keep releases folder files)
+README.md
+# Don't exclude .md files in releases folder
+!releases/*.md
+
+# Batch files (Windows only)
+*.bat
+
+# Old server file (using server.cjs)
+server.js
+
+# Logs
+*.log
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
