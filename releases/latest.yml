@@ -1,17 +1,8 @@
 version: 1.0.6
 files:
-<<<<<<< HEAD
   - url: My Projects Pro Setup 1.0.6.exe
     sha512: rFF6pKeKyOi4zMdC+/pXQVYW1IN8xE14oIZMIiNlg9RWuX3abur4kE4ER0W3EWPpJItk8TQP5G71FJioFTzogw==
     size: 107971527
 path: My Projects Pro Setup 1.0.6.exe
 sha512: rFF6pKeKyOi4zMdC+/pXQVYW1IN8xE14oIZMIiNlg9RWuX3abur4kE4ER0W3EWPpJItk8TQP5G71FJioFTzogw==
 releaseDate: '2025-12-19T07:26:28.386Z'
-=======
-  - url: https://github.com/rafikhanmanyar-star/update-server/releases/download/v1.0.5/My.Projects.Pro.Setup.1.0.5.exe
-    sha512: izyBbnSIPylcveT9jqp0TO6GowecR754xcenAvMmhejDPGxxNF24Nu3ooP1ziWV0LfdoFUwpustn1EV9/avQ2Q==
-    size: 107965376
-path: My Projects Pro Setup 1.0.5.exe
-sha512: izyBbnSIPylcveT9jqp0TO6GowecR754xcenAvMmhejDPGxxNF24Nu3ooP1ziWV0LfdoFUwpustn1EV9/avQ2Q==
-releaseDate: '2025-12-19T06:22:50.882Z'
->>>>>>> 39cbaa70ba8d45c1c9d874478b79b3dc410a1971
