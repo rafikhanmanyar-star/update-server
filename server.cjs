@@ -19,7 +19,7 @@ const CONFIG = {
   // GitHub repository configuration
   github: {
     owner: 'rafikhanmanyar-star',
-    repo: 'MyProjectsPro',
+    repo: 'update-server',
     apiUrl: 'https://api.github.com',
     // Optional: GitHub token for private repositories (set via GITHUB_TOKEN env var)
     token: process.env.GITHUB_TOKEN || null,
