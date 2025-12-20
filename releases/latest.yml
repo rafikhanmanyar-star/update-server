@@ -1,8 +1,8 @@
-version: 1.0.7
+version: 1.0.8
 files:
-  - url: My Projects Pro Setup 1.0.7.exe
-    sha512: 280mJXfL4hm0kk4H8v6WhA+AwjvHyTe9FopF1t8PTe7g6Ysi97rT5Yz4LYV3jd7MPiQJm0zyxx9FT8xfrXXHcA==
-    size: 108299166
-path: My Projects Pro Setup 1.0.7.exe
-sha512: 280mJXfL4hm0kk4H8v6WhA+AwjvHyTe9FopF1t8PTe7g6Ysi97rT5Yz4LYV3jd7MPiQJm0zyxx9FT8xfrXXHcA==
-releaseDate: '2025-12-20T08:57:33.306Z'
+  - url: My Projects Pro Setup 1.0.8.exe
+    sha512: MfkT2O0OuCIQ9l32FoGSEGMnRqzHxLbdStveN/xJVeR9cGT1v1E9Fb8bi2SdHCNaG0bfk/0OFHyvti9W5SNYUA==
+    size: 108301140
+path: My Projects Pro Setup 1.0.8.exe
+sha512: MfkT2O0OuCIQ9l32FoGSEGMnRqzHxLbdStveN/xJVeR9cGT1v1E9Fb8bi2SdHCNaG0bfk/0OFHyvti9W5SNYUA==
+releaseDate: '2025-12-20T10:22:07.154Z'
