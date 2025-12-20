@@ -3,6 +3,6 @@ files:
   - url: https://github.com/rafikhanmanyar-star/update-server/releases/download/v1.0.8/My.Projects.Pro.Setup.1.0.8.exe
     sha512: MfkT2O0OuCIQ9l32FoGSEGMnRqzHxLbdStveN/xJVeR9cGT1v1E9Fb8bi2SdHCNaG0bfk/0OFHyvti9W5SNYUA==
     size: 108301140
-path: My.Projects.Pro.Setup.1.0.8.exe
+path: https://github.com/rafikhanmanyar-star/update-server/releases/download/v1.0.8/My.Projects.Pro.Setup.1.0.8.exe
 sha512: MfkT2O0OuCIQ9l32FoGSEGMnRqzHxLbdStveN/xJVeR9cGT1v1E9Fb8bi2SdHCNaG0bfk/0OFHyvti9W5SNYUA==
 releaseDate: '2025-12-20T10:22:07.154Z'
