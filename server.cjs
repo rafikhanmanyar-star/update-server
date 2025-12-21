@@ -219,72 +219,86 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Check if file exists - try both the resolved path and also check if we need to handle URL encoding differently
-fs.stat(resolvedPath, (err, stats) => {
-  if (err || !stats.isFile()) {
-    // If file not found locally, try to proxy from GitHub Releases
-    console.log(`  → 404 Not Found locally: ${resolvedPath}`);
-    console.log(`  → Attempting to proxy from GitHub Releases...`);
-    
-    // Extract filename from path
-    const fileName = path.basename(resolvedPath);
-    
-    // Try to find the file in GitHub Releases
-    fetchGitHubReleases((error, releases) => {
-      if (error || !releases || releases.length === 0) {
-        send404(res, resolvedPath);
-        return;
-      }
-      
-      // Find the latest release that has the file
-      let downloadUrl = null;
-      for (const release of releases) {
-        const asset = release.assets.find(a => 
-          a.name === fileName || 
-          a.name.toLowerCase() === fileName.toLowerCase() ||
-          decodeURIComponent(a.name) === fileName
-        );
-        if (asset) {
-          downloadUrl = asset.browser_download_url;
-          break;
-        }
-      }
-      
-      if (downloadUrl) {
-        console.log(`  → Proxying from GitHub: ${downloadUrl}`);
-        // Proxy the download from GitHub
-        https.get(downloadUrl, (githubRes) => {
-          if (githubRes.statusCode === 200 || githubRes.statusCode === 302) {
-            // Handle redirects
-            if (githubRes.statusCode === 302) {
-              const redirectUrl = githubRes.headers.location;
-              https.get(redirectUrl, (redirectRes) => {
-                res.writeHead(200, {
-                  'Content-Type': 'application/octet-stream',
-                  'Content-Length': redirectRes.headers['content-length'],
-                });
-                redirectRes.pipe(res);
-              }).on('error', () => send404(res, resolvedPath));
-            } else {
-              res.writeHead(200, {
-                'Content-Type': 'application/octet-stream',
-                'Content-Length': githubRes.headers['content-length'],
-              });
-              githubRes.pipe(res);
-            }
-          } else {
-            send404(res, resolvedPath);
-          }
-        }).on('error', () => send404(res, resolvedPath));
-      } else {
-        send404(res, resolvedPath);
-      }
-    });
+  // General file handler - serve files from releases directory or proxy from GitHub
+  const fileName = pathname.startsWith('/') ? pathname.substring(1) : pathname;
+  const filePath = path.join(CONFIG.releasesDir, fileName);
+  const resolvedPath = path.resolve(filePath);
+  
+  // Security check - ensure we're only serving from releases directory
+  if (!resolvedPath.startsWith(path.resolve(CONFIG.releasesDir))) {
+    console.error(`Security violation: ${resolvedPath} is outside releases directory`);
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Forbidden');
     return;
   }
-  
-  // File exists, serve it
-  serveFile(resolvedPath, stats, req, res);
+
+  // Check if file exists
+  fs.stat(resolvedPath, (err, stats) => {
+    if (err || !stats.isFile()) {
+      // If file not found locally, try to proxy from GitHub Releases
+      console.log(`  → 404 Not Found locally: ${resolvedPath}`);
+      console.log(`  → Attempting to proxy from GitHub Releases...`);
+      
+      // Extract filename from path (already have it, but use basename for consistency)
+      const searchFileName = path.basename(resolvedPath);
+      
+      // Try to find the file in GitHub Releases
+      fetchGitHubReleases((error, releases) => {
+        if (error || !releases || releases.length === 0) {
+          send404(res, resolvedPath);
+          return;
+        }
+        
+        // Find the latest release that has the file
+        let downloadUrl = null;
+        for (const release of releases) {
+          const asset = release.assets.find(a => 
+            a.name === searchFileName || 
+            a.name.toLowerCase() === searchFileName.toLowerCase() ||
+            decodeURIComponent(a.name) === searchFileName
+          );
+          if (asset) {
+            downloadUrl = asset.browser_download_url;
+            break;
+          }
+        }
+        
+        if (downloadUrl) {
+          console.log(`  → Proxying from GitHub: ${downloadUrl}`);
+          // Proxy the download from GitHub
+          https.get(downloadUrl, (githubRes) => {
+            if (githubRes.statusCode === 200 || githubRes.statusCode === 302) {
+              // Handle redirects
+              if (githubRes.statusCode === 302) {
+                const redirectUrl = githubRes.headers.location;
+                https.get(redirectUrl, (redirectRes) => {
+                  res.writeHead(200, {
+                    'Content-Type': 'application/octet-stream',
+                    'Content-Length': redirectRes.headers['content-length'],
+                  });
+                  redirectRes.pipe(res);
+                }).on('error', () => send404(res, resolvedPath));
+              } else {
+                res.writeHead(200, {
+                  'Content-Type': 'application/octet-stream',
+                  'Content-Length': githubRes.headers['content-length'],
+                });
+                githubRes.pipe(res);
+              }
+            } else {
+              send404(res, resolvedPath);
+            }
+          }).on('error', () => send404(res, resolvedPath));
+        } else {
+          send404(res, resolvedPath);
+        }
+      });
+      return;
+    }
+    
+    // File exists, serve it
+    serveFile(resolvedPath, stats, req, res);
+  });
 });
 
 // Fetch releases from GitHub API
