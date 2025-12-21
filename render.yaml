@@ -9,4 +9,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Add GITHUB_TOKEN here in Render dashboard if repository is private
+      # Go to Render Dashboard > Your Service > Environment > Add Environment Variable
+      # Key: GITHUB_TOKEN
+      # Value: your_github_personal_access_token
 

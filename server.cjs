@@ -148,6 +148,17 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  
+  // Health check endpoint (doesn't require GitHub)
+  if (pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      githubConfigured: !!CONFIG.github.token 
+    }));
+    return;
+  }
 
   // API endpoint to check server status
   if (pathname === '/api/status') {
@@ -375,14 +386,40 @@ function fetchGitHubReleases(callback) {
         callback(helpfulError, null);
       } else if (res.statusCode === 401 || res.statusCode === 403) {
         // Authentication/authorization error
+        let errorMessage = 'Authentication failed or repository access denied';
+        let suggestions = [
+          'If repository is private, set GITHUB_TOKEN environment variable in Render',
+          'Verify the token has access to the repository',
+          'Check if the repository exists and is accessible',
+          `Repository: ${CONFIG.github.owner}/${CONFIG.github.repo}`,
+          `Token configured: ${CONFIG.github.token ? 'Yes' : 'No'}`,
+        ];
+        
+        // Provide more specific error message
+        try {
+          const errorData = JSON.parse(data);
+          if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+          // Check if it's a rate limit issue
+          if (errorData.message && errorData.message.includes('rate limit')) {
+            errorMessage = 'GitHub API rate limit exceeded. Please wait a few minutes.';
+            suggestions = [
+              'GitHub API has rate limits for unauthenticated requests',
+              'Set GITHUB_TOKEN environment variable to increase rate limits',
+              'Wait a few minutes and try again',
+            ];
+          }
+        } catch (e) {
+          // Use default message
+        }
+        
         const authError = {
           code: 'AUTH_ERROR',
-          message: 'Authentication failed or repository access denied',
-          suggestions: [
-            'If repository is private, set GITHUB_TOKEN environment variable in Render',
-            'Verify the token has access to the repository',
-            'Check if the repository exists and is accessible',
-          ],
+          message: errorMessage,
+          suggestions: suggestions,
+          repository: `${CONFIG.github.owner}/${CONFIG.github.repo}`,
+          hasToken: !!CONFIG.github.token,
         };
         console.error('GitHub API Auth Error:', authError);
         callback(authError, null);
