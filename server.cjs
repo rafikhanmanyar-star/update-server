@@ -210,7 +210,7 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      // Read and serve the file
+      // Read and transform the file (convert relative URLs to absolute GitHub URLs)
       fs.readFile(resolvedPath, 'utf8', (readErr, data) => {
         if (readErr) {
           console.error(`Error reading latest.yml: ${readErr.message}`);
@@ -219,12 +219,21 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        res.setHeader('Content-Type', 'text/yaml');
-        res.setHeader('Content-Length', Buffer.byteLength(data, 'utf8'));
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.writeHead(200);
-        res.end(data);
-        console.log(`  → 200 OK: latest.yml (${stats.size} bytes)`);
+        // Transform relative URLs to absolute GitHub release URLs
+        transformLatestYmlUrls(data, (transformErr, transformedData) => {
+          if (transformErr) {
+            console.error(`Error transforming latest.yml: ${transformErr.message}`);
+            // Fall back to original data if transformation fails
+            transformedData = data;
+          }
+
+          res.setHeader('Content-Type', 'text/yaml');
+          res.setHeader('Content-Length', Buffer.byteLength(transformedData, 'utf8'));
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.writeHead(200);
+          res.end(transformedData);
+          console.log(`  → 200 OK: latest.yml (${Buffer.byteLength(transformedData, 'utf8')} bytes)`);
+        });
       });
     });
     return;
@@ -442,6 +451,126 @@ function fetchGitHubReleases(callback) {
   }).on('error', (error) => {
     console.error('Error fetching from GitHub API:', error);
     callback(error, null);
+  });
+}
+
+// Transform latest.yml: convert relative URLs to absolute GitHub release URLs
+function transformLatestYmlUrls(ymlContent, callback) {
+  // Try to fetch GitHub releases to match filenames
+  fetchGitHubReleases((error, releases) => {
+    if (error || !releases || releases.length === 0) {
+      console.warn('Could not fetch GitHub releases for URL transformation, using original latest.yml');
+      callback(null, ymlContent);
+      return;
+    }
+
+    // Find the latest release
+    const latestRelease = releases[0];
+    if (!latestRelease || !latestRelease.assets || latestRelease.assets.length === 0) {
+      console.warn('Latest release has no assets, using original latest.yml');
+      callback(null, ymlContent);
+      return;
+    }
+
+    // Helper function to normalize filename for comparison (handle spaces, dots, hyphens)
+    function normalizeFilename(name) {
+      return name.toLowerCase()
+        .replace(/[.\s-]/g, '')  // Remove dots, spaces, hyphens
+        .replace(/\.exe$/i, '');  // Remove .exe extension
+    }
+
+    // Find matching asset in the release (try exact match first, then normalized)
+    let transformedContent = ymlContent;
+    
+    // Transform URLs in files array
+    transformedContent = transformedContent.replace(
+      /(\s+-\s+url:\s+)([^\s\n]+)/g,
+      (match, prefix, url) => {
+        // Skip if already absolute URL
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return match;
+        }
+
+        // Find matching asset
+        const matchingAsset = latestRelease.assets.find(asset => {
+          const assetName = asset.name;
+          const urlFileName = path.basename(url);
+          
+          // Try exact match first
+          if (assetName === urlFileName || 
+              assetName.toLowerCase() === urlFileName.toLowerCase()) {
+            return true;
+          }
+          
+          // Try normalized comparison
+          if (normalizeFilename(assetName) === normalizeFilename(urlFileName)) {
+            return true;
+          }
+          
+          return false;
+        });
+
+        if (matchingAsset) {
+          console.log(`  → Transforming URL: ${url} → ${matchingAsset.browser_download_url}`);
+          return prefix + matchingAsset.browser_download_url;
+        }
+
+        // If no match found, try to construct URL from release tag and filename
+        if (latestRelease.tag_name) {
+          const constructedUrl = `https://github.com/${CONFIG.github.owner}/${CONFIG.github.repo}/releases/download/${latestRelease.tag_name}/${url}`;
+          console.log(`  → Constructing URL: ${url} → ${constructedUrl}`);
+          return prefix + constructedUrl;
+        }
+
+        return match;
+      }
+    );
+
+    // Transform path field
+    transformedContent = transformedContent.replace(
+      /^(path:\s+)([^\s\n]+)$/m,
+      (match, prefix, urlPath) => {
+        // Skip if already absolute URL
+        if (urlPath.startsWith('http://') || urlPath.startsWith('https://')) {
+          return match;
+        }
+
+        // Find matching asset
+        const matchingAsset = latestRelease.assets.find(asset => {
+          const assetName = asset.name;
+          const pathFileName = path.basename(urlPath);
+          
+          // Try exact match first
+          if (assetName === pathFileName || 
+              assetName.toLowerCase() === pathFileName.toLowerCase()) {
+            return true;
+          }
+          
+          // Try normalized comparison
+          if (normalizeFilename(assetName) === normalizeFilename(pathFileName)) {
+            return true;
+          }
+          
+          return false;
+        });
+
+        if (matchingAsset) {
+          console.log(`  → Transforming path: ${urlPath} → ${matchingAsset.browser_download_url}`);
+          return prefix + matchingAsset.browser_download_url;
+        }
+
+        // If no match found, try to construct URL from release tag
+        if (latestRelease.tag_name) {
+          const constructedUrl = `https://github.com/${CONFIG.github.owner}/${CONFIG.github.repo}/releases/download/${latestRelease.tag_name}/${urlPath}`;
+          console.log(`  → Constructing path: ${urlPath} → ${constructedUrl}`);
+          return prefix + constructedUrl;
+        }
+
+        return match;
+      }
+    );
+
+    callback(null, transformedContent);
   });
 }
 
