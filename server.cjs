@@ -214,8 +214,21 @@ const server = http.createServer((req, res) => {
       fs.readFile(resolvedPath, 'utf8', (readErr, data) => {
         if (readErr) {
           console.error(`Error reading latest.yml: ${readErr.message}`);
-          res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end('Error reading latest.yml');
+          // Try to fetch from GitHub Releases as fallback
+          console.log('  → Attempting to fetch latest.yml from GitHub Releases...');
+          fetchLatestYmlFromGitHub((gitErr, gitData) => {
+            if (gitErr || !gitData) {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+              res.end('Error reading latest.yml');
+              return;
+            }
+            res.setHeader('Content-Type', 'text/yaml');
+            res.setHeader('Content-Length', Buffer.byteLength(gitData, 'utf8'));
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.writeHead(200);
+            res.end(gitData);
+            console.log(`  → 200 OK: latest.yml from GitHub (${Buffer.byteLength(gitData, 'utf8')} bytes)`);
+          });
           return;
         }
 
@@ -225,6 +238,12 @@ const server = http.createServer((req, res) => {
             console.error(`Error transforming latest.yml: ${transformErr.message}`);
             // Fall back to original data if transformation fails
             transformedData = data;
+          }
+          
+          // Verify that transformation actually happened (check if URLs are absolute)
+          const hasAbsoluteUrls = transformedData.includes('https://github.com/');
+          if (!hasAbsoluteUrls && data !== transformedData) {
+            console.warn('  ⚠️  Transformation did not produce absolute URLs - URLs may still be relative');
           }
 
           res.setHeader('Content-Type', 'text/yaml');
@@ -472,17 +491,70 @@ function transformLatestYmlUrls(ymlContent, callback) {
       return;
     }
 
-    // Helper function to normalize filename for comparison (handle spaces, dots, hyphens)
+    console.log(`Transforming latest.yml for release: ${latestRelease.tag_name}`);
+    console.log(`Available assets: ${latestRelease.assets.map(a => a.name).join(', ')}`);
+
+    // Helper function to normalize filename for comparison (handle spaces, dots, hyphens, underscores)
     function normalizeFilename(name) {
       return name.toLowerCase()
-        .replace(/[.\s-]/g, '')  // Remove dots, spaces, hyphens
+        .replace(/[.\s\-_]/g, '')  // Remove dots, spaces, hyphens, underscores
         .replace(/\.exe$/i, '');  // Remove .exe extension
     }
 
-    // Find matching asset in the release (try exact match first, then normalized)
+    // Helper function to find matching asset
+    function findMatchingAsset(fileName) {
+      const baseName = path.basename(fileName);
+      
+      // Strategy 1: Exact match (case-insensitive)
+      let match = latestRelease.assets.find(asset => 
+        asset.name === baseName || asset.name.toLowerCase() === baseName.toLowerCase()
+      );
+      if (match) {
+        console.log(`  → Exact match found: ${baseName} → ${match.name}`);
+        return match;
+      }
+      
+      // Strategy 2: Normalized comparison (ignores spaces, dots, hyphens, case)
+      match = latestRelease.assets.find(asset => 
+        normalizeFilename(asset.name) === normalizeFilename(baseName)
+      );
+      if (match) {
+        console.log(`  → Normalized match found: ${baseName} → ${match.name}`);
+        return match;
+      }
+      
+      // Strategy 3: Partial match (contains the version number and "Setup")
+      const versionMatch = baseName.match(/(\d+\.\d+\.\d+)/);
+      if (versionMatch) {
+        const version = versionMatch[1];
+        match = latestRelease.assets.find(asset => {
+          const assetLower = asset.name.toLowerCase();
+          return assetLower.includes(version.toLowerCase()) && 
+                 (assetLower.includes('setup') || assetLower.endsWith('.exe'));
+        });
+        if (match) {
+          console.log(`  → Version-based match found: ${baseName} → ${match.name}`);
+          return match;
+        }
+      }
+      
+      // Strategy 4: Find first .exe file if only one exists
+      const exeAssets = latestRelease.assets.filter(asset => 
+        asset.name.toLowerCase().endsWith('.exe')
+      );
+      if (exeAssets.length === 1) {
+        console.log(`  → Single .exe asset match: ${baseName} → ${exeAssets[0].name}`);
+        return exeAssets[0];
+      }
+      
+      console.warn(`  ⚠️  No match found for: ${baseName}`);
+      console.warn(`     Available assets: ${latestRelease.assets.map(a => a.name).join(', ')}`);
+      return null;
+    }
+
+    // Transform URLs in files array
     let transformedContent = ymlContent;
     
-    // Transform URLs in files array
     transformedContent = transformedContent.replace(
       /(\s+-\s+url:\s+)([^\s\n]+)/g,
       (match, prefix, url) => {
@@ -491,37 +563,14 @@ function transformLatestYmlUrls(ymlContent, callback) {
           return match;
         }
 
-        // Find matching asset
-        const matchingAsset = latestRelease.assets.find(asset => {
-          const assetName = asset.name;
-          const urlFileName = path.basename(url);
-          
-          // Try exact match first
-          if (assetName === urlFileName || 
-              assetName.toLowerCase() === urlFileName.toLowerCase()) {
-            return true;
-          }
-          
-          // Try normalized comparison
-          if (normalizeFilename(assetName) === normalizeFilename(urlFileName)) {
-            return true;
-          }
-          
-          return false;
-        });
-
+        const matchingAsset = findMatchingAsset(url);
         if (matchingAsset) {
           console.log(`  → Transforming URL: ${url} → ${matchingAsset.browser_download_url}`);
           return prefix + matchingAsset.browser_download_url;
         }
 
-        // If no match found, try to construct URL from release tag and filename
-        if (latestRelease.tag_name) {
-          const constructedUrl = `https://github.com/${CONFIG.github.owner}/${CONFIG.github.repo}/releases/download/${latestRelease.tag_name}/${url}`;
-          console.log(`  → Constructing URL: ${url} → ${constructedUrl}`);
-          return prefix + constructedUrl;
-        }
-
+        // Last resort: return original (don't construct URL as it likely won't work)
+        console.error(`  ❌ Cannot transform URL: ${url} - no matching asset found`);
         return match;
       }
     );
@@ -535,42 +584,62 @@ function transformLatestYmlUrls(ymlContent, callback) {
           return match;
         }
 
-        // Find matching asset
-        const matchingAsset = latestRelease.assets.find(asset => {
-          const assetName = asset.name;
-          const pathFileName = path.basename(urlPath);
-          
-          // Try exact match first
-          if (assetName === pathFileName || 
-              assetName.toLowerCase() === pathFileName.toLowerCase()) {
-            return true;
-          }
-          
-          // Try normalized comparison
-          if (normalizeFilename(assetName) === normalizeFilename(pathFileName)) {
-            return true;
-          }
-          
-          return false;
-        });
-
+        const matchingAsset = findMatchingAsset(urlPath);
         if (matchingAsset) {
           console.log(`  → Transforming path: ${urlPath} → ${matchingAsset.browser_download_url}`);
           return prefix + matchingAsset.browser_download_url;
         }
 
-        // If no match found, try to construct URL from release tag
-        if (latestRelease.tag_name) {
-          const constructedUrl = `https://github.com/${CONFIG.github.owner}/${CONFIG.github.repo}/releases/download/${latestRelease.tag_name}/${urlPath}`;
-          console.log(`  → Constructing path: ${urlPath} → ${constructedUrl}`);
-          return prefix + constructedUrl;
-        }
-
+        // Last resort: return original (don't construct URL as it likely won't work)
+        console.error(`  ❌ Cannot transform path: ${urlPath} - no matching asset found`);
         return match;
       }
     );
 
     callback(null, transformedContent);
+  });
+}
+
+// Fetch latest.yml directly from GitHub Releases (fallback)
+function fetchLatestYmlFromGitHub(callback) {
+  fetchGitHubReleases((error, releases) => {
+    if (error || !releases || releases.length === 0) {
+      callback(error, null);
+      return;
+    }
+
+    const latestRelease = releases[0];
+    if (!latestRelease || !latestRelease.assets) {
+      callback(new Error('No assets in latest release'), null);
+      return;
+    }
+
+    // Find latest.yml or latest.yaml asset
+    const ymlAsset = latestRelease.assets.find(asset => 
+      asset.name === 'latest.yml' || asset.name === 'latest.yaml'
+    );
+
+    if (!ymlAsset) {
+      callback(new Error('latest.yml not found in GitHub release assets'), null);
+      return;
+    }
+
+    // Download the file
+    https.get(ymlAsset.browser_download_url, (res) => {
+      if (res.statusCode !== 200) {
+        callback(new Error(`Failed to download latest.yml: ${res.statusCode}`), null);
+        return;
+      }
+
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        console.log(`  → Successfully fetched latest.yml from GitHub: ${ymlAsset.browser_download_url}`);
+        callback(null, data);
+      });
+    }).on('error', (err) => {
+      callback(err, null);
+    });
   });
 }
 
